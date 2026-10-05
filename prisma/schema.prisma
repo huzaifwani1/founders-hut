@@ -1,0 +1,633 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String               @id @default(uuid())
+  email            String               @unique
+  passwordHash     String
+  role             String               @default("MEMBER") // "MEMBER" | "ADMIN"
+  isSuspended      Boolean              @default(false)
+  isTestUser       Boolean              @default(false)
+  emailVerified    Boolean              @default(false)
+  onboardingStep   Int                  @default(1) // Onboarding Step 1-7
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  profile          Profile?
+  verifications    Verification[]
+  employments      Employment[]
+  requests         Request[]            @relation("UserRequests")
+
+  // Introductions relations
+  introsRequested  Introduction[]       @relation("FromUserIntros")
+  introsReceived   Introduction[]       @relation("ToUserIntros")
+  introsFacilitated Introduction[]     @relation("FacilitatorIntros")
+
+  // Connections relations
+  connectionsA     Connection[]         @relation("UserAConnections")
+  connectionsB     Connection[]         @relation("UserBConnections")
+
+  // Messaging relations
+  conversationsA   Conversation[]       @relation("UserAConversations")
+  conversationsB   Conversation[]       @relation("UserBConversations")
+  messagesSent     Message[]            @relation("SentMessages")
+
+  notifications             Notification[]
+  auditLogs                 AuditLog[]
+  refreshTokens             RefreshToken[]
+  resetTokens               PasswordResetToken[]
+  emailVerificationTokens   EmailVerificationToken[]
+  reportsSubmitted          Report[]             @relation("ReportedBy")
+  reportsReceived           Report[]             @relation("ReportedUser")
+  blocksInitiated           UserBlock[]          @relation("Blocker")
+  blocksReceived            UserBlock[]          @relation("Blocked")
+  feedbacks                 ProductFeedback[]
+  analyticsEvents           AnalyticsEvent[]
+  investorProfile           InvestorProfile?
+  communityMemberships      CommunityMembership[]
+  communityDiscussions      CommunityDiscussion[]
+
+  // Social & Community Layer relations
+  posts                     Post[]               @relation("UserPosts")
+  receivedPrivatePosts      Post[]               @relation("RecipientPosts")
+  comments                  Comment[]
+  usefulReactions           PostUsefulReaction[]
+  savedPosts                PostSave[]
+  sentPrivateShares         PrivateShare[]       @relation("SentPrivateShares")
+  receivedPrivateShares     PrivateShare[]       @relation("ReceivedPrivateShares")
+  createdCommunities        Community[]          @relation("CreatedCommunities")
+
+  // Problems Solved / Resolution Layer relations
+  resolutionsAsAsker        ResolutionRecord[]   @relation("AskerResolutions")
+  resolutionsAsHelper       ResolutionRecord[]   @relation("HelperResolutions")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  reporterId  String
+  reporter    User     @relation("ReportedBy", fields: [reporterId], references: [id], onDelete: Cascade)
+  
+  targetType  String   // "PROFILE" | "REQUEST" | "MESSAGE" | "MEMBER" | "POST" | "COMMENT" | "COMMUNITY"
+  targetId    String   // ID of profile, request, message, user, post, comment, or community
+  
+  reportedUserId String?
+  reportedUser   User?   @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+
+  reason      String   // "SPAM" | "HARASSMENT" | "INAPPROPRIATE_CONTENT" | "IMPERSONATION" | "OTHER"
+  details     String?
+  status      String   @default("OPEN") // "OPEN" | "INVESTIGATING" | "RESOLVED" | "DISMISSED"
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([reporterId])
+  @@index([status])
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+model ProductFeedback {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category  String   @default("GENERAL") // "BUG" | "FEATURE" | "UX" | "GENERAL"
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  eventType String   // e.g. "account_created", "verification_submitted", "message_sent", "post_created"
+  metadata  String?  // Sanitized JSON string (no private content)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Profile {
+  id                   String            @id @default(uuid())
+  userId               String            @unique
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name                 String
+  avatar               String?
+  initials             String
+  role                 String
+  company              String
+  companyStage         String            @default("SERIES_A") // "BOOTSTRAPPED" | "SEED" | "SERIES_A" | "SERIES_B_PLUS" | "GROWTH" | "PUBLIC"
+  industry             String
+  location             String
+  bio                  String?
+  yearsBuilding        Int?              // Nullable, explicitly provided during activation
+  founderStage         String            @default("EARLY_REVENUE") // "IDEA" | "MVP" | "FIRST_CUSTOMER" | "EARLY_REVENUE" | "GROWTH" | "FUNDRAISING" | "SCALE"
+
+  // Privacy Controls
+  isProfilePublic      Boolean           @default(true)
+  allowDirectMessages  Boolean           @default(true)
+  appearInDiscovery    Boolean           @default(true)
+
+  // User-provided lists stored as JSON arrays
+  canHelpWithJson      String            @default("[]") // JSON string array
+  lookingForJson       String            @default("[]") // JSON string array
+  skillsJson           String            @default("[]") // JSON string array
+
+  // Metrics with explicit provenance / source fields
+  arrValue             String?
+  arrSource            String            @default("Self-Reported")
+  arrIsSelfReported    Boolean           @default(true)
+
+  teamSizeValue        String?
+  teamSizeSource       String            @default("Verified Payroll")
+  teamSizeIsSelfReported Boolean         @default(false)
+
+  fundingValue         String?
+  fundingSource        String            @default("Verified SEC/VC Filings")
+  fundingIsSelfReported Boolean          @default(false)
+
+  // Relationship notes / provenance context
+  relationshipNotes    String?
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([location])
+  @@index([industry])
+  @@index([role])
+  @@index([company])
+}
+
+model Company {
+  id                 String       @id @default(uuid())
+  name               String
+  domain             String       @unique
+  industry           String
+  stage              String       @default("SERIES_A")
+  registrationNumber String?
+  isVerifiedEntity   Boolean      @default(false)
+
+  employments        Employment[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([domain])
+}
+
+model Employment {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId      String?
+  company        Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  title          String
+  companyName    String
+  period         String
+  highlight      String?
+  isVerifiedRole Boolean   @default(false)
+  startDate      DateTime?
+  endDate        DateTime?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([companyId])
+}
+
+model Verification {
+  id                      String                 @id @default(uuid())
+  userId                  String
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level                   String                 @default("UNVERIFIED") // "UNVERIFIED" | "PENDING" | "VERIFIED_MEMBER" | "VERIFIED_PROFESSIONAL" | "VERIFIED_FOUNDER" | "VERIFIED_INVESTOR" | "REJECTED"
+
+  // Evidence Pillars
+  identityVerified        Boolean                @default(false)
+  corporateDomainVerified Boolean                @default(false)
+  entityVerified          Boolean                @default(false)
+  founderStatusVerified   Boolean                @default(false)
+
+  // Progressive Evidence & Trust Signals
+  invitedByUserId         String?
+  invitationTrustSignal   Boolean                @default(false)
+  mcaCinDinVerified       Boolean                @default(false)
+  evidenceLogJson         String?
+  manualReviewReason      String?
+
+  reviewedByAdminId       String?
+  rejectionReason         String?
+  
+  documents               VerificationDocument[]
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  @@index([userId])
+}
+
+model VerificationDocument {
+  id             String           @id @default(uuid())
+  verificationId String
+  verification   Verification     @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  type           String           // "IDENTITY" | "COMPANY" | "ROLE" | "FOUNDER_STATUS"
+  fileRef        String           // Abstracted S3 key / hashed file reference
+  status         String           @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  createdAt      DateTime         @default(now())
+}
+
+model Request {
+  id                String         @id @default(uuid())
+  authorId          String
+  author            User           @relation("UserRequests", fields: [authorId], references: [id], onDelete: Cascade)
+
+  communityId       String?
+  community         Community?     @relation(fields: [communityId], references: [id], onDelete: SetNull)
+
+  needCategory      String         @default("EXPANSION") // "HIRING" | "FUNDRAISING" | "EXPANSION" | "VENDOR_STACK" | "STRATEGIC_ADVICE" | "GENERAL_INTRO"
+  title             String
+  needDescription   String
+  context           String?
+  industry          String
+  location          String
+  desiredConnection String?
+  urgency           String         @default("NORMAL") // "NORMAL" | "URGENT"
+  status            String         @default("OPEN") // "OPEN" | "CONNECTED" | "FULFILLED"
+  visibility        String         @default("PUBLIC_TO_VERIFIED_NETWORK") // "PUBLIC_TO_VERIFIED_NETWORK" | "CONNECTIONS_ONLY" | "PRIVATE"
+  responsesCount    Int            @default(0)
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  resolutions       ResolutionRecord[]
+
+  @@index([authorId])
+  @@index([communityId])
+  @@index([needCategory])
+  @@index([visibility])
+  @@index([status])
+}
+
+model Introduction {
+  id              String      @id @default(uuid())
+  fromUserId      String
+  fromUser        User        @relation("FromUserIntros", fields: [fromUserId], references: [id], onDelete: Cascade)
+  
+  toUserId        String
+  toUser          User        @relation("ToUserIntros", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  facilitatorId   String
+  facilitator     User        @relation("FacilitatorIntros", fields: [facilitatorId], references: [id], onDelete: Cascade)
+
+  suggestedUserId String?     // For 3-party intros (Founder B suggests Member C to Founder A)
+  reason          String
+  status          String      @default("REQUESTED") // "REQUESTED" | "ACCEPTED" | "DECLINED" | "INTRODUCED" | "CONNECTED" | "CLOSED"
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  resolutions     ResolutionRecord[]
+
+  @@index([fromUserId, toUserId])
+  @@index([toUserId])
+  @@index([status])
+}
+
+model Connection {
+  id                String   @id @default(uuid())
+  userAId           String
+  userA             User     @relation("UserAConnections", fields: [userAId], references: [id], onDelete: Cascade)
+
+  userBId           String
+  userB             User     @relation("UserBConnections", fields: [userBId], references: [id], onDelete: Cascade)
+
+  relationshipNotes String?
+  establishedAt     DateTime @default(now())
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model Conversation {
+  id             String    @id @default(uuid())
+  participantAId String
+  participantA   User      @relation("UserAConversations", fields: [participantAId], references: [id], onDelete: Cascade)
+
+  participantBId String
+  participantB   User      @relation("UserBConversations", fields: [participantBId], references: [id], onDelete: Cascade)
+
+  topic          String?
+  facilitatedBy  String?
+  lastMessage    String?
+  lastMessageTime DateTime @default(now())
+
+  messages       Message[]
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([participantAId, participantBId])
+  @@index([participantAId])
+  @@index([participantBId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId       String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  text           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String
+  title     String
+  detail    String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  action     String   // e.g. "VERIFICATION_APPROVED", "USER_SUSPENDED"
+  targetType String   // e.g. "USER", "VERIFICATION"
+  targetId   String
+  ipAddress  String?
+  metadata   String?  // JSON string
+  createdAt  DateTime @default(now())
+}
+
+model Community {
+  id           String                @id @default(uuid())
+  name         String
+  slug         String                @unique
+  category     String                @default("SECTOR") // "SECTOR" | "STAGE" | "TOPIC" | "REGION"
+  description  String
+  icon         String?
+  isPrivate    Boolean               @default(false)
+  creatorId    String?
+  creator      User?                 @relation("CreatedCommunities", fields: [creatorId], references: [id], onDelete: SetNull)
+  membersCount Int                   @default(0)
+  status       String                @default("ACTIVE") // "ACTIVE" | "ARCHIVED"
+  
+  memberships  CommunityMembership[]
+  discussions  CommunityDiscussion[]
+  posts        Post[]
+  requests     Request[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([category])
+  @@index([creatorId])
+}
+
+model CommunityMembership {
+  id          String    @id @default(uuid())
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String    @default("MEMBER") // "MEMBER" | "LEAD" | "MODERATOR" | "OWNER"
+  status      String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "REMOVED"
+  joinedAt    DateTime  @default(now())
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+}
+
+model CommunityDiscussion {
+  id            String    @id @default(uuid())
+  communityId   String
+  community     Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  title         String
+  body          String
+  topicCategory String    @default("QUESTION") // "QUESTION" | "DISCUSSION" | "RESOURCE" | "EVENT"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([communityId])
+  @@index([authorId])
+  @@index([topicCategory])
+}
+
+model Post {
+  id          String      @id @default(uuid())
+  authorId    String
+  author      User        @relation("UserPosts", fields: [authorId], references: [id], onDelete: Cascade)
+  
+  type        String      @default("SHORT_POST") // "SHORT_POST" | "ARTICLE" | "LINK"
+  title       String?
+  body        String
+  linkUrl     String?
+  visibility  String      @default("PUBLIC_TO_VERIFIED_NETWORK") // "PUBLIC_TO_VERIFIED_NETWORK" | "COMMUNITY_ONLY" | "PRIVATE"
+  
+  communityId String?
+  community   Community?  @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  
+  recipientId String?
+  recipient   User?       @relation("RecipientPosts", fields: [recipientId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  comments        Comment[]
+  usefulReactions PostUsefulReaction[]
+  saves           PostSave[]
+  privateShares   PrivateShare[]
+
+  @@index([authorId])
+  @@index([communityId])
+  @@index([recipientId])
+  @@index([visibility])
+  @@index([createdAt])
+}
+
+model Comment {
+  id              String    @id @default(uuid())
+  postId          String
+  post            Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  parentCommentId String?
+  parentComment   Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies         Comment[] @relation("CommentReplies")
+
+  body            String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentCommentId])
+}
+
+model PostUsefulReaction {
+  id        String   @id @default(uuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model PostSave {
+  id        String   @id @default(uuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model PrivateShare {
+  id          String   @id @default(uuid())
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User     @relation("SentPrivateShares", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User     @relation("ReceivedPrivateShares", fields: [recipientId], references: [id], onDelete: Cascade)
+  message     String?
+  createdAt   DateTime @default(now())
+
+  @@index([postId])
+  @@index([senderId])
+  @@index([recipientId])
+}
+
+model InvestorProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  investorType        String   @default("VC") // "ANGEL" | "VC" | "FAMILY_OFFICE" | "SYNDICATE" | "CORPORATE_VC"
+  firmName            String?
+  stageFocusJson      String   @default("[]") // e.g. ["PRE_SEED", "SEED", "SERIES_A"]
+  chequeRangeMin      String?  // e.g. "₹50L"
+  chequeRangeMax      String?  // e.g. "₹2Cr"
+  sectorsJson         String   @default("[]") // JSON string array
+  geographiesJson     String   @default("[]") // JSON string array
+  portfolioHighlights String?
+  currentFocus        String?
+  introPreferences    String   @default("WARM_INTRO_ONLY") // "WARM_INTRO_ONLY" | "DIRECT" | "FOUNDER_MATCH"
+  isVerifiedInvestor  Boolean  @default(false)
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([investorType])
+}
+
+model ResolutionRecord {
+  id                 String       @id @default(uuid())
+  requestId          String
+  request            Request      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  askerId            String
+  asker              User         @relation("AskerResolutions", fields: [askerId], references: [id], onDelete: Cascade)
+  helperId           String
+  helper             User         @relation("HelperResolutions", fields: [helperId], references: [id], onDelete: Cascade)
+  introductionId     String?
+  introduction       Introduction? @relation(fields: [introductionId], references: [id], onDelete: SetNull)
+
+  outcomeType        String       // "SOLVED" | "PARTIALLY_SOLVED" | "STILL_IN_PROGRESS" | "NOT_HELPFUL"
+  outcomeCategory    String?      // "FOUND_RIGHT_PERSON" | "ACTIONABLE_ADVICE" | "BUSINESS_DECISION" | "DEAL" | "HIRE" | "PARTNERSHIP" | "VENDOR" | "AVOIDED_MISTAKE" | "OTHER"
+  helpType           String       // "OPERATIONAL_EXPERIENCE" | "STRATEGIC_ADVICE" | "WARM_INTRODUCTION" | "VENDOR_CONNECTION" | "PARTNER_CONNECTION" | "HIRING_HELP" | "DOCUMENT_REVIEW" | "OTHER"
+  askerAssessment    String?      // Optional narrative/notes from asker
+  helperConfirmation Boolean      @default(false)
+  summary            String?      // Optional narrative summary
+  visibility         String       @default("VERIFIED_NETWORK") // "PRIVATE" | "PARTICIPANTS_ONLY" | "VERIFIED_NETWORK"
+  status             String       @default("PENDING_HELPER_CONFIRMATION") // "PENDING_HELPER_CONFIRMATION" | "VERIFIED" | "DECLINED" | "UNVERIFIED"
+
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([requestId, helperId])
+  @@index([askerId])
+  @@index([helperId])
+  @@index([requestId])
+  @@index([status])
+  @@index([outcomeCategory])
+  @@index([visibility])
+}

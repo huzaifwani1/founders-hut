@@ -1,0 +1,36 @@
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.db
+*.db-journal
+dev.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node modules & build outputs
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor & System files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Antigravity / local artifacts
+scratch
+test-results
